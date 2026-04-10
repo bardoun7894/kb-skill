@@ -1,6 +1,6 @@
 ---
 name: kb-spec
-description: Bridge between GitHub Spec Kit and the kb-* knowledge base. TRIGGER PROACTIVELY at the start of any Spec Kit phase — run `/kb-spec pre` before `/speckit.specify`, `/kb-spec plan` before `/speckit.plan`, `/kb-spec tasks` before `/speckit.tasks`, `/kb-spec implement` before `/speckit.implement`, and `/kb-spec post` after `/speckit.tasks` finishes. Do not wait for the user to invoke kb-spec explicitly — it is a standing bridge. Queries the KB for prior art and writes results into the current feature's research.md under clearly labeled sections per phase, then delegates to kb-docs-sync to mirror specs/**/*.md and plans/**/*.md back into the KB after finalization. Also use when the user says "new spec", "run speckit with KB context", or "sync the spec into KB".
+description: Bridge between GitHub Spec Kit and the kb-* knowledge base. TRIGGER PROACTIVELY at the start of any Spec Kit phase — run `/kb-spec pre` before `/speckit.specify`, `/kb-spec plan` before `/speckit.plan`, `/kb-spec tasks` before `/speckit.tasks`, `/kb-spec implement` before `/speckit.implement`, and `/kb-spec post` after `/speckit.tasks` finishes. Also run `/kb-spec init` once per project to bootstrap Spec Kit itself (copies templates + scripts from the global `~/.specify/` install so you don't need specify-cli). Do not wait for the user to invoke kb-spec explicitly — it is a standing bridge. Queries the KB for prior art and writes results into the current feature's research.md under clearly labeled sections per phase, then delegates to kb-docs-sync to mirror specs/**/*.md and plans/**/*.md back into the KB after finalization. Also use when the user says "new spec", "run speckit with KB context", or "sync the spec into KB".
 allowed-tools: Bash Read Write Edit Glob Grep
 ---
 
@@ -10,10 +10,11 @@ This skill is a thin bridge. It does **not** replace `/speckit.specify`, `/speck
 
 ## Modes
 
-Five modes, selected by the first positional argument. Each pre-phase mode writes into `specs/<NNN-short-name>/research.md` under a clearly labeled section — no Spec Kit file is overwritten, only `research.md` is touched.
+Six modes, selected by the first positional argument. Each pre-phase mode writes into `specs/<NNN-short-name>/research.md` under a clearly labeled section — no Spec Kit file is overwritten, only `research.md` is touched.
 
 | Mode        | When to run                     | KB query framing                                                                  | Output section in `research.md`       |
 |-------------|---------------------------------|-----------------------------------------------------------------------------------|---------------------------------------|
+| `init`      | Once per project, before anything else | N/A — bootstraps Spec Kit into the current project by copying `.specify/` templates and scripts from `~/.specify/` | (writes `.specify/`, `specs/`)       |
 | `pre`       | Before `/speckit.specify`       | "Prior decisions, constraints, or related work about `<feature area>`"            | `## Prior art from KB`                |
 | `plan`      | Before `/speckit.plan`          | "Architectural decisions, tech stack choices, integration patterns for `<area>`"  | `## Architecture notes from KB`       |
 | `tasks`     | Before `/speckit.tasks`         | "Task breakdown patterns, known pitfalls, testing approaches for `<area>`"        | `## Task patterns from KB`            |
@@ -24,7 +25,8 @@ Multiple pre-phase modes can run sequentially over the life of a feature. Each o
 
 If the user invokes the skill with no mode, pick based on the state of the current feature directory:
 
-- No `spec.md` → **pre**
+- No `.specify/` in project root → **init**
+- `.specify/` exists but no `spec.md` yet → **pre**
 - `spec.md` exists, no `plan.md` → **plan**
 - `plan.md` exists, no `tasks.md` → **tasks**
 - `tasks.md` exists, no implementation progress detected → **implement**
@@ -34,9 +36,75 @@ Ambiguous cases: ask the user which mode they want.
 
 ## Prerequisites
 
-1. **Spec Kit installed.** Look for `.specify/templates/spec-template.md` under the project root or under `/Users/mohamedbardouni/.specify/`. If neither exists, stop and tell the user to install Spec Kit first.
+1. **Spec Kit installed in the project.** Look for `.specify/templates/spec-template.md` at the project root. If missing, run **`/kb-spec init`** — the init mode copies the global Spec Kit install (`~/.specify/`) into the project so you do not need to install `specify-cli` separately. If neither the project-local nor the global `~/.specify/` exists, stop and tell the user to install Spec Kit globally once with `uvx --from git+https://github.com/github/spec-kit.git specify init .` or by cloning the templates manually.
 2. **KB initialized.** Walk up from cwd to find `ai-knowledge-base/scripts/query.py` and `ai-knowledge-base/knowledge/index.md`. If missing, tell the user to run `/kb-setup`.
 3. **kb-docs-sync available** (post mode only). Confirm `~/.agents/skills/kb-docs-sync/SKILL.md` exists — otherwise fall back to reporting the sync step as a manual follow-up.
+
+## Workflow — init mode
+
+Bootstraps Spec Kit into the current project by copying the global install. Run this once per project before any other kb-spec mode. No LLM calls — pure file I/O.
+
+### 1. Locate the source
+
+Find a Spec Kit install to copy from. In order of preference:
+
+1. `~/.specify/` — the user's global Spec Kit install (most common on this machine)
+2. The directory holding an existing `specify-cli` binary on `$PATH` (`specify --help 2>/dev/null` → `dirname $(command -v specify)/../share/specify`)
+3. If neither is found, stop and tell the user to install Spec Kit globally first:
+
+   ```bash
+   uvx --from git+https://github.com/github/spec-kit.git specify init --here
+   ```
+
+   and point them at the official repo — do **not** attempt to download it from the network, because kb-spec has no authority to run arbitrary installers.
+
+### 2. Resolve the project root
+
+Walk up from cwd to the first ancestor containing `.git/` or `.claude/`. That is the project root. If neither marker is found, refuse to run — kb-spec should never pollute a user's `$HOME` by mistake.
+
+### 3. Check for existing Spec Kit install
+
+If `<project-root>/.specify/templates/spec-template.md` already exists:
+
+- Report "Spec Kit already initialized at `<project-root>/.specify/`, nothing to do."
+- Offer `--force` as an explicit opt-in to overwrite (wipe `.specify/` and copy fresh from the source).
+- Stop unless `--force` was given.
+
+### 4. Copy the minimal Spec Kit scaffold
+
+Create these directories under `<project-root>`:
+
+```
+.specify/
+  templates/      ← copied from <source>/templates/
+  scripts/
+    bash/         ← copied from <source>/scripts/bash/
+specs/            ← empty, ready for the first feature dir
+```
+
+Use `cp -R` via Bash. Make `.specify/scripts/bash/*.sh` executable (`chmod +x`). Do **not** copy `<source>/specs/` — that contains the *source machine's* features and would pollute the project with unrelated work.
+
+### 5. (Optional) Copy Kilo Code workflow prompts
+
+If `~/.kilocode/workflows/speckit.*.md` exists and the project has a `.kilocode/` directory (indicating Kilo Code is in use for this project), copy the workflows into `<project-root>/.kilocode/workflows/`. Otherwise skip this step — Claude Code users don't need them.
+
+### 6. Report back
+
+```
+kb-spec init complete
+  Source:       ~/.specify/
+  Destination:  <project-root>/.specify/
+  Created:
+    .specify/templates/  (5 template files)
+    .specify/scripts/bash/  (N scripts)
+    specs/               (empty)
+
+Next:
+  - Describe a feature:   /kb-spec pre "your feature description"
+  - Then run Spec Kit:    /speckit.specify "your feature description"
+```
+
+Then stop. Do not invoke any other mode automatically — init is a one-shot bootstrap.
 
 ## Shared workflow — pre-phase modes (`pre`, `plan`, `tasks`, `implement`)
 
