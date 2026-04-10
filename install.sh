@@ -1,8 +1,8 @@
 #!/bin/bash
-# kb-skill installer — copies the five kb-* skills into ~/.claude/skills/
+# kb-skill installer — copies the eight kb-* skills into ~/.claude/skills/
 #
 # Usage:
-#   ./install.sh                  # copy all five skills
+#   ./install.sh                  # copy all eight skills
 #   ./install.sh --dry-run        # show what would be copied
 #   ./install.sh --force          # overwrite existing installs without prompting
 
@@ -36,7 +36,7 @@ fi
 
 mkdir -p "$SKILLS_DST"
 
-SKILLS=(kb-setup kb-ingest kb-docs-sync kb-compile kb-query kb-lint kb-publish)
+SKILLS=(kb-setup kb-ingest kb-docs-sync kb-compile kb-query kb-lint kb-publish kb-spec)
 
 echo "kb-skill installer"
 echo "  source:      $SKILLS_SRC"

@@ -20,6 +20,7 @@ Inspired by Andrej Karpathy's LLM Wiki pattern, the [claude-memory-compiler](htt
 | `/kb-query` | Ask questions against the knowledge base with index-guided retrieval |
 | `/kb-lint` | Run health checks (broken links, orphans, frontmatter, contradictions) |
 | `/kb-publish` | Mirror the knowledge base to a NotebookLM notebook via the notebooklm-mcp server |
+| `/kb-spec` | Bridge GitHub Spec Kit with the KB: query prior art into each feature's `research.md` before `/speckit.{specify,plan,tasks,implement}`, then delegate to `/kb-docs-sync` to mirror finalized specs back into the KB |
 
 ## Install
 
@@ -29,7 +30,7 @@ One-liner (recommended):
 curl -fsSL https://raw.githubusercontent.com/bardoun7894/kb-skill/main/bootstrap.sh | bash
 ```
 
-That clones the repo to `~/.local/share/kb-skill` and copies the six `kb-*` skills into `~/.claude/skills/`, where Claude Code discovers them automatically. Re-run the same command any time to update.
+That clones the repo to `~/.local/share/kb-skill` and copies the eight `kb-*` skills into `~/.claude/skills/`, where Claude Code discovers them automatically. Re-run the same command any time to update.
 
 Manual install (if you prefer to inspect before running):
 
