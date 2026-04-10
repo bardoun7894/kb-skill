@@ -15,6 +15,7 @@ Inspired by Andrej Karpathy's LLM Wiki pattern, the [claude-memory-compiler](htt
 |---|---|
 | `/kb-setup` | Install the runtime + wire hooks into a project's `.claude/settings.local.json` |
 | `/kb-ingest` | Manually ingest documents from `raw/` into `knowledge/sources/` + related pages |
+| `/kb-docs-sync` | Mirror tracked project docs (CLAUDE.md, README.md, docs/**/*.md) into `knowledge/sources/`, updating on change and removing stale pages |
 | `/kb-compile` | Compile new daily conversation logs into concept articles |
 | `/kb-query` | Ask questions against the knowledge base with index-guided retrieval |
 | `/kb-lint` | Run health checks (broken links, orphans, frontmatter, contradictions) |

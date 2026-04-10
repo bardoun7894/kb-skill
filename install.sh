@@ -36,7 +36,7 @@ fi
 
 mkdir -p "$SKILLS_DST"
 
-SKILLS=(kb-setup kb-ingest kb-compile kb-query kb-lint kb-publish)
+SKILLS=(kb-setup kb-ingest kb-docs-sync kb-compile kb-query kb-lint kb-publish)
 
 echo "kb-skill installer"
 echo "  source:      $SKILLS_SRC"
