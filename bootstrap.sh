@@ -2,7 +2,7 @@
 # kb-skill bootstrap installer
 #
 # One-liner install from GitHub:
-#   curl -fsSL https://raw.githubusercontent.com/mohamedbardouni/kb-skill/main/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/bardoun7894/kb-skill/main/bootstrap.sh | bash
 #
 # What it does:
 #   1. Clones (or updates) the kb-skill repo to ~/.local/share/kb-skill
@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-REPO_URL="https://github.com/mohamedbardouni/kb-skill.git"
+REPO_URL="https://github.com/bardoun7894/kb-skill.git"
 INSTALL_DIR="${KB_SKILL_DIR:-$HOME/.local/share/kb-skill}"
 
 echo "kb-skill bootstrap"

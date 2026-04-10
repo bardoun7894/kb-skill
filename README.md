@@ -25,7 +25,7 @@ Inspired by Andrej Karpathy's LLM Wiki pattern, the [claude-memory-compiler](htt
 One-liner (recommended):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mohamedbardouni/kb-skill/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/bardoun7894/kb-skill/main/bootstrap.sh | bash
 ```
 
 That clones the repo to `~/.local/share/kb-skill` and copies the six `kb-*` skills into `~/.claude/skills/`, where Claude Code discovers them automatically. Re-run the same command any time to update.
@@ -33,7 +33,7 @@ That clones the repo to `~/.local/share/kb-skill` and copies the six `kb-*` skil
 Manual install (if you prefer to inspect before running):
 
 ```bash
-git clone https://github.com/mohamedbardouni/kb-skill ~/.local/share/kb-skill
+git clone https://github.com/bardoun7894/kb-skill ~/.local/share/kb-skill
 ~/.local/share/kb-skill/install.sh
 ```
 
