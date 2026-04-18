@@ -33,6 +33,7 @@ from utils import (
     list_raw_files,
     list_wiki_articles,
     load_state,
+    pick_model,
     read_wiki_index,
     save_state,
 )
@@ -201,6 +202,7 @@ Read the daily log above and compile it into wiki articles following the schema 
     cost = 0.0
 
     try:
+        model = pick_model("compile-one", input_chars=len(prompt))
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
@@ -209,6 +211,7 @@ Read the daily log above and compile it into wiki articles following the schema 
                 allowed_tools=["Read", "Write", "Edit", "Glob", "Grep"],
                 permission_mode="acceptEdits",
                 max_turns=30,
+                model=model,
             ),
         ):
             if isinstance(message, AssistantMessage):

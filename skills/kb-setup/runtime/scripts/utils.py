@@ -2,8 +2,55 @@
 
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
+
+# ── Model selection ───────────────────────────────────────────────────
+# Centralized picker so every KB script uses the same cost/quality rule.
+# Env override: KB_FORCE_MODEL=<id> wins over everything (for debugging).
+
+HAIKU = "claude-haiku-4-5-20251001"
+SONNET = "claude-sonnet-4-6"
+OPUS = "claude-opus-4-7"
+
+
+def pick_model(task: str, input_chars: int = 0) -> str:
+    """
+    Pick a Claude model by task type and rough input size.
+
+    task values (use exactly these strings so callers stay grep-able):
+      "query-short"   — kb-query with a small question (< ~3 citations expected)
+      "query-deep"    — kb-query with a large question or full-KB synthesis
+      "compile-one"   — compile a single daily log
+      "compile-batch" — --all / multi-day recompile
+      "flush"         — on-demand session flush (short transcript)
+      "ingest"        — process a raw/ document
+
+    Override with env KB_FORCE_MODEL=<model-id> for debugging or cost tests.
+    """
+    forced = os.environ.get("KB_FORCE_MODEL")
+    if forced:
+        return forced
+
+    if task == "query-short" and input_chars < 2000:
+        return HAIKU
+    if task == "query-short":
+        return SONNET
+    if task == "query-deep":
+        return SONNET
+    if task == "compile-one":
+        return SONNET
+    if task == "compile-batch":
+        return SONNET
+    if task == "flush" and input_chars < 4000:
+        return HAIKU
+    if task == "flush":
+        return SONNET
+    if task == "ingest":
+        return SONNET
+
+    return SONNET
 
 from config import (
     ARTICLE_DIRS,

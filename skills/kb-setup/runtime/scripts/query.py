@@ -17,7 +17,7 @@ import asyncio
 from pathlib import Path
 
 from config import KNOWLEDGE_DIR, QA_DIR, now_iso
-from utils import load_state, read_all_wiki_content, save_state
+from utils import load_state, pick_model, read_all_wiki_content, save_state
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
@@ -83,6 +83,10 @@ consulting the knowledge base below.
     cost = 0.0
 
     try:
+        model = pick_model(
+            "query-short" if len(question) < 400 else "query-deep",
+            input_chars=len(prompt),
+        )
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
@@ -91,6 +95,7 @@ consulting the knowledge base below.
                 allowed_tools=tools,
                 permission_mode="acceptEdits",
                 max_turns=15,
+                model=model,
             ),
         ):
             if isinstance(message, AssistantMessage):
