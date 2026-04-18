@@ -140,8 +140,12 @@ def append_daily_index(
         return
 
     text = daily_file.read_text(encoding="utf-8")
+
+    # Idempotency: if this raw-link already appears, don't append again.
+    if f"[[{raw_link}]]" in text:
+        return
+
     if "## Sessions" not in text:
-        # No Sessions header — append one at the end with the entry.
         daily_file.write_text(
             text.rstrip() + f"\n\n## Sessions\n\n{entry}",
             encoding="utf-8",
@@ -149,7 +153,8 @@ def append_daily_index(
         return
 
     # Insert the entry at the end of the ## Sessions section
-    # (right before the next ## header, or EOF).
+    # (right before the next ## header, or EOF). Ensure a blank line
+    # separates the list from the next heading per markdown convention.
     lines = text.splitlines(keepends=True)
     out: list[str] = []
     in_sessions = False
@@ -158,6 +163,8 @@ def append_daily_index(
     for line in lines:
         if in_sessions and line.startswith("## ") and not inserted:
             out.append(entry)
+            if not entry.endswith("\n\n"):
+                out.append("\n")
             inserted = True
             in_sessions = False
         out.append(line)
