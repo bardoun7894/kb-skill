@@ -1,11 +1,16 @@
 """
-SessionEnd hook - captures conversation transcript for memory extraction.
+SessionEnd hook — raw-copy the conversation transcript into the KB.
 
-When a Claude Code session ends, this hook reads the transcript path from
-stdin, extracts conversation context, and spawns flush.py as a background
-process to extract knowledge into the daily log.
+Pure file I/O, zero API calls. Writes the rendered transcript to
+`raw/sessions/<date>-<short-sid>.md` and appends a one-line index entry
+to `daily/<date>.md` under `## Sessions`.
 
-The hook itself does NO API calls - only local file I/O for speed (<10s).
+Extraction/structuring is deferred to `/kb-compile`, which batches many
+sessions into a single LLM call. That keeps per-session capture free and
+lossless; the LLM spend happens on-demand, over material the user has
+already decided is worth compiling.
+
+Recursion guard: if we were spawned by a downstream Claude Code run, exit.
 """
 
 from __future__ import annotations
@@ -14,20 +19,17 @@ import json
 import logging
 import os
 import re
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Recursion guard: if we were spawned by flush.py (which calls Agent SDK,
-# which runs Claude Code, which would fire this hook again), exit immediately.
 if os.environ.get("CLAUDE_INVOKED_BY"):
     sys.exit(0)
 
 ROOT = Path(__file__).resolve().parent.parent
 DAILY_DIR = ROOT / "daily"
+RAW_SESSIONS_DIR = ROOT / "raw" / "sessions"
 SCRIPTS_DIR = ROOT / "scripts"
-STATE_DIR = SCRIPTS_DIR
 
 logging.basicConfig(
     filename=str(SCRIPTS_DIR / "flush.log"),
@@ -36,14 +38,28 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-MAX_TURNS = 30
-MAX_CONTEXT_CHARS = 15_000
-MIN_TURNS_TO_FLUSH = 1
+MAX_TURNS = 200
+MIN_TURNS_TO_SAVE = 1
 
 
-def extract_conversation_context(transcript_path: Path) -> tuple[str, int]:
-    """Read JSONL transcript and extract last ~N conversation turns as markdown."""
-    turns: list[str] = []
+def find_transcript(session_id: str, hinted_path: str) -> Path | None:
+    """Prefer the hint; fall back to globbing every project dir under ~/.claude/projects."""
+    if hinted_path:
+        p = Path(hinted_path)
+        if p.exists():
+            return p
+    projects = Path.home() / ".claude" / "projects"
+    if projects.is_dir():
+        for candidate in projects.glob(f"*/{session_id}.jsonl"):
+            return candidate
+    return None
+
+
+def extract_turns(transcript_path: Path) -> tuple[list[dict], str | None, str | None]:
+    """Parse JSONL, return (turns, cwd, first_user_prompt)."""
+    turns: list[dict] = []
+    cwd: str | None = None
+    first_user: str | None = None
 
     with open(transcript_path, encoding="utf-8") as f:
         for line in f:
@@ -54,6 +70,9 @@ def extract_conversation_context(transcript_path: Path) -> tuple[str, int]:
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
+
+            if cwd is None and isinstance(entry.get("cwd"), str):
+                cwd = entry["cwd"]
 
             msg = entry.get("message", {})
             if isinstance(msg, dict):
@@ -67,107 +86,152 @@ def extract_conversation_context(transcript_path: Path) -> tuple[str, int]:
                 continue
 
             if isinstance(content, list):
-                text_parts = []
+                parts = []
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "text":
-                        text_parts.append(block.get("text", ""))
+                        parts.append(block.get("text", ""))
                     elif isinstance(block, str):
-                        text_parts.append(block)
-                content = "\n".join(text_parts)
+                        parts.append(block)
+                content = "\n".join(parts)
 
             if isinstance(content, str) and content.strip():
-                label = "User" if role == "user" else "Assistant"
-                turns.append(f"**{label}:** {content.strip()}\n")
+                turns.append({"role": role, "content": content.strip()})
+                if first_user is None and role == "user":
+                    first_user = content.strip()
 
-    recent = turns[-MAX_TURNS:]
-    context = "\n".join(recent)
+    return turns[-MAX_TURNS:], cwd, first_user
 
-    if len(context) > MAX_CONTEXT_CHARS:
-        context = context[-MAX_CONTEXT_CHARS:]
-        boundary = context.find("\n**")
-        if boundary > 0:
-            context = context[boundary + 1 :]
 
-    return context, len(recent)
+def render_session(turns: list[dict], session_id: str, cwd: str | None) -> str:
+    header = [
+        f"# Session {session_id}",
+        "",
+        f"**Captured:** {datetime.now(timezone.utc).astimezone().isoformat()}",
+        f"**cwd:** {cwd or 'unknown'}",
+        f"**Turns:** {len(turns)}",
+        "",
+        "---",
+        "",
+    ]
+    body = []
+    for t in turns:
+        label = "User" if t["role"] == "user" else "Assistant"
+        body.append(f"## {label}\n\n{t['content']}\n")
+    return "\n".join(header) + "\n".join(body)
+
+
+def append_daily_index(
+    date_str: str,
+    time_str: str,
+    cwd: str | None,
+    first_user: str | None,
+    raw_link: str,
+) -> None:
+    daily_file = DAILY_DIR / f"{date_str}.md"
+    cwd_label = Path(cwd).name if cwd else "unknown"
+    preview = (first_user or "").splitlines()[0][:80].replace("|", "¦").replace("[", "(").replace("]", ")")
+    entry = f'- {time_str} [{cwd_label}] "{preview}" → [[{raw_link}]]\n'
+
+    if not daily_file.exists():
+        daily_file.write_text(
+            f"# Daily Log: {date_str}\n\n## Sessions\n\n{entry}\n## Memory Maintenance\n",
+            encoding="utf-8",
+        )
+        return
+
+    text = daily_file.read_text(encoding="utf-8")
+    if "## Sessions" not in text:
+        # No Sessions header — append one at the end with the entry.
+        daily_file.write_text(
+            text.rstrip() + f"\n\n## Sessions\n\n{entry}",
+            encoding="utf-8",
+        )
+        return
+
+    # Insert the entry at the end of the ## Sessions section
+    # (right before the next ## header, or EOF).
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    in_sessions = False
+    inserted = False
+
+    for line in lines:
+        if in_sessions and line.startswith("## ") and not inserted:
+            out.append(entry)
+            inserted = True
+            in_sessions = False
+        out.append(line)
+        if line.strip() == "## Sessions":
+            in_sessions = True
+
+    if in_sessions and not inserted:
+        if not out or not out[-1].endswith("\n"):
+            out.append("\n")
+        out.append(entry)
+        inserted = True
+
+    daily_file.write_text("".join(out), encoding="utf-8")
 
 
 def main() -> None:
-    # Read hook input from stdin
-    # Claude Code on Windows may pass paths with unescaped backslashes
     try:
         raw_input = sys.stdin.read()
         try:
             hook_input: dict = json.loads(raw_input)
         except json.JSONDecodeError:
-            fixed_input = re.sub(r'(?<!\\)\\(?!["\\])', r'\\\\', raw_input)
-            hook_input = json.loads(fixed_input)
+            fixed = re.sub(r'(?<!\\)\\(?!["\\])', r'\\\\', raw_input)
+            hook_input = json.loads(fixed)
     except (json.JSONDecodeError, ValueError, EOFError) as e:
         logging.error("Failed to parse stdin: %s", e)
         return
 
     session_id = hook_input.get("session_id", "unknown")
     source = hook_input.get("source", "unknown")
-    transcript_path_str = hook_input.get("transcript_path", "")
-
+    hinted = hook_input.get("transcript_path", "") or ""
     logging.info("SessionEnd fired: session=%s source=%s", session_id, source)
 
-    if not transcript_path_str or not isinstance(transcript_path_str, str):
-        logging.info("SKIP: no transcript path")
+    transcript_path = find_transcript(session_id, hinted)
+    if transcript_path is None:
+        logging.info("SKIP: transcript not found (hint=%s)", hinted)
         return
 
-    transcript_path = Path(transcript_path_str)
-    if not transcript_path.exists():
-        logging.info("SKIP: transcript missing: %s", transcript_path_str)
-        return
-
-    # Extract conversation context in the hook (fast, no API calls)
     try:
-        context, turn_count = extract_conversation_context(transcript_path)
+        turns, cwd, first_user = extract_turns(transcript_path)
     except Exception as e:
-        logging.error("Context extraction failed: %s", e)
+        logging.error("Extraction failed: %s", e)
         return
 
-    if not context.strip():
-        logging.info("SKIP: empty context")
+    if len(turns) < MIN_TURNS_TO_SAVE:
+        logging.info("SKIP: %d turns (min %d)", len(turns), MIN_TURNS_TO_SAVE)
         return
 
-    if turn_count < MIN_TURNS_TO_FLUSH:
-        logging.info("SKIP: only %d turns (min %d)", turn_count, MIN_TURNS_TO_FLUSH)
-        return
+    now = datetime.now(timezone.utc).astimezone()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H:%M")
 
-    # Write context to a temp file for the background process
-    timestamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d-%H%M%S")
-    context_file = STATE_DIR / f"session-flush-{session_id}-{timestamp}.md"
-    context_file.write_text(context, encoding="utf-8")
+    RAW_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    DAILY_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Spawn flush.py as a background process
-    flush_script = SCRIPTS_DIR / "flush.py"
+    short_sid = session_id.split("-")[0] if "-" in session_id else session_id[:8]
+    raw_stem = f"{date_str}-{short_sid}"
+    raw_file = RAW_SESSIONS_DIR / f"{raw_stem}.md"
+    raw_file.write_text(render_session(turns, session_id, cwd), encoding="utf-8")
 
-    cmd = [
-        "uv",
-        "run",
-        "--directory",
-        str(ROOT),
-        "python",
-        str(flush_script),
-        str(context_file),
+    append_daily_index(
+        date_str,
+        time_str,
+        cwd,
+        first_user,
+        raw_link=f"raw/sessions/{raw_stem}",
+    )
+
+    logging.info(
+        "Raw-copied session %s (%d turns, %d bytes) → %s",
         session_id,
-    ]
-
-    # On Windows, use CREATE_NO_WINDOW to avoid flash console window.
-    # Do NOT use DETACHED_PROCESS — it breaks the Agent SDK's subprocess I/O.
-    creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-
-    try:
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creation_flags,
-        )
-        logging.info("Spawned flush.py for session %s (%d turns, %d chars)", session_id, turn_count, len(context))
-    except Exception as e:
-        logging.error("Failed to spawn flush.py: %s", e)
+        len(turns),
+        raw_file.stat().st_size,
+        raw_file,
+    )
 
 
 if __name__ == "__main__":

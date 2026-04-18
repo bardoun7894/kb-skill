@@ -1,12 +1,17 @@
 ---
 name: kb-compile
-description: Compile new daily conversation logs into structured knowledge articles under knowledge/concepts and knowledge/connections. Use when the user asks to compile the knowledge base, after a long coding session, or when daily/ has uncompiled logs. Automatic compilation also runs after 6pm via the SessionEnd hook installed by kb-setup.
+description: Compile raw conversation transcripts (`raw/sessions/*.md`) and daily index logs (`daily/YYYY-MM-DD.md`) into structured knowledge articles under `knowledge/concepts` and `knowledge/connections`. The SessionEnd hook now raw-copies every session with zero API cost; kb-compile is the deferred extraction step that spends tokens only on material you choose to compile. Use when the user asks to compile the knowledge base, after a long coding session, or when `raw/sessions/` or `daily/` have uncompiled material.
 allowed-tools: Bash Read Glob
 ---
 
 # kb-compile — compile conversation logs into the knowledge base
 
-This skill is a thin wrapper around the project-local `scripts/compile.py`. It runs the Claude Agent SDK compiler that turns `daily/YYYY-MM-DD.md` conversation logs into concept and connection articles in `knowledge/`.
+This skill is a thin wrapper around the project-local `scripts/compile.py`. It runs the Claude Agent SDK compiler that turns the two forms of captured input into concept and connection articles in `knowledge/`:
+
+- **`raw/sessions/YYYY-MM-DD-<short-sid>.md`** — full rendered transcripts written by the SessionEnd hook (one per session, zero-cost capture).
+- **`daily/YYYY-MM-DD.md`** — the per-day index with one line per session pointing at the raw file, plus any manual notes the user appended.
+
+The compiler walks the daily index first (it is the roadmap), then reads the referenced raw sessions for detail. This lets the user prune uninteresting sessions from the daily index before compiling and pay for extraction only on the ones that matter.
 
 ## Prerequisites
 

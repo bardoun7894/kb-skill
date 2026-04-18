@@ -39,6 +39,7 @@ Ambiguous cases: ask the user which mode they want.
 1. **Spec Kit installed in the project.** Look for `.specify/templates/spec-template.md` at the project root. If missing, run **`/kb-spec init`** — the init mode copies the global Spec Kit install (`~/.specify/`) into the project so you do not need to install `specify-cli` separately. If neither the project-local nor the global `~/.specify/` exists, stop and tell the user to install Spec Kit globally once with `uvx --from git+https://github.com/github/spec-kit.git specify init .` or by cloning the templates manually.
 2. **KB initialized.** Walk up from cwd to find `ai-knowledge-base/scripts/query.py` and `ai-knowledge-base/knowledge/index.md`. If missing, tell the user to run `/kb-setup`.
 3. **kb-docs-sync available** (post mode only). Confirm `~/.agents/skills/kb-docs-sync/SKILL.md` exists — otherwise fall back to reporting the sync step as a manual follow-up.
+4. **`gh` CLI available** (optional, enriches pre-phase and post modes). If `command -v gh` resolves and `gh auth status` succeeds, GitHub issues and PRs are folded into `research.md` alongside KB prior art. If `gh` is missing or unauthenticated, the GitHub step is silently skipped — never block the KB research path on it.
 
 ## Workflow — init mode
 
@@ -147,6 +148,26 @@ uv run --directory <kb-root> python scripts/query.py "<derived question>"
 
 Capture stdout verbatim. Do **not** pass `--file-back` — pre-phase modes are read-only against the KB. The feature's own spec/plan/tasks files will become KB source pages later when post mode runs, so writing a qa/ page now would duplicate.
 
+### 3b. (Optional) Query GitHub for related issues & PRs
+
+If `gh` is available and authenticated (see Prerequisites #4), enrich the KB result with GitHub history. Scope: current repository only (`gh` auto-resolves via the git remote).
+
+```bash
+gh issue list --search "<key concept>" --state all --limit 10 \
+  --json number,title,state,url,labels
+gh pr list    --search "<key concept>" --state all --limit 10 \
+  --json number,title,state,url,mergedAt
+```
+
+Mode-specific framing (append as filter hints to the search string):
+
+- **pre** → broad match on the feature name (no extra filter)
+- **plan** → add `in:body architecture OR design OR decision`
+- **tasks** → add `in:body task OR TODO OR checklist`
+- **implement** → add `in:body bug OR fix OR regression` plus `label:bug` on the issue query
+
+Keep output compact: title, number, state, URL. Skip the step silently if `gh` is absent, unauthenticated, or returns an error — GitHub enrichment must never block the KB research path.
+
 ### 4. Write or update `FEATURE_DIR/research.md`
 
 If the file does not exist, create it with this skeleton:
@@ -168,6 +189,7 @@ Then ensure the mode's section heading exists and replace **only** the contents 
 2. `## Architecture notes from KB`  ← owned by `plan`
 3. `## Task patterns from KB`       ← owned by `tasks`
 4. `## Implementation notes from KB`← owned by `implement`
+5. `## Related GitHub issues & PRs` ← co-owned: each pre-phase mode appends its own numbered sub-block here (`### pre @ <ISO>`, `### plan @ <ISO>`, …), newest on top; never replaces the whole section
 
 Algorithm for section replacement:
 

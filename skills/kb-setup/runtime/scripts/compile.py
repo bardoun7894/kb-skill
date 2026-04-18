@@ -41,6 +41,40 @@ from utils import (
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
+def _expand_session_wikilinks(log_content: str, log_path: Path) -> str:
+    """
+    The SessionEnd hook writes daily logs as a compact index of one-line entries
+    pointing at `[[raw/sessions/<date>-<short-sid>]]`. Compile needs the actual
+    session bodies to extract anything useful, so splice each referenced file's
+    content under the corresponding index line before handing to the LLM.
+
+    Silent no-op if a referenced file is missing — the index line still gives
+    the LLM enough context (cwd + first prompt) to know the session existed.
+    """
+    import re
+
+    kb_root = log_path.resolve().parent.parent  # daily/ → ai-knowledge-base/
+    pattern = re.compile(r"\[\[(raw/sessions/[^\]]+?)\]\]")
+
+    def replace(match: "re.Match[str]") -> str:
+        link = match.group(1)
+        # Resolve with or without a .md suffix on the link target.
+        candidates = [kb_root / f"{link}.md", kb_root / link]
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                body = candidate.read_text(encoding="utf-8")
+                return (
+                    f"[[{link}]]\n\n"
+                    f"<details open>\n"
+                    f"<summary>Inlined session: {candidate.name}</summary>\n\n"
+                    f"{body}\n"
+                    f"</details>"
+                )
+        return match.group(0)
+
+    return pattern.sub(replace, log_content)
+
+
 async def compile_daily_log(log_path: Path, state: dict) -> float:
     """Compile a single daily log into knowledge articles.
 
@@ -54,7 +88,9 @@ async def compile_daily_log(log_path: Path, state: dict) -> float:
         query,
     )
 
-    log_content = log_path.read_text(encoding="utf-8")
+    log_content = _expand_session_wikilinks(
+        log_path.read_text(encoding="utf-8"), log_path,
+    )
     schema = AGENTS_FILE.read_text(encoding="utf-8")
     wiki_index = read_wiki_index()
 
