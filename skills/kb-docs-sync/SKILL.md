@@ -1,6 +1,6 @@
 ---
 name: kb-docs-sync
-description: Sync the project's documentation markdown files (CLAUDE.md, README.md, docs/**/*.md, spec files, etc.) into the knowledge base as mirrored source pages. Creates new pages for new docs, updates pages when the source file changes, and deletes pages whose source file was removed or moved. Use when the user asks to sync docs, mirror documentation into the KB, update the KB from project docs, or clean up stale KB pages. Only touches pages that carry a sync_origin frontmatter marker — user-authored source pages are never modified.
+description: Sync project docs (CLAUDE.md, README.md, docs/**/*.md, specs) into the KB as mirrored source pages. Creates pages for new docs, updates pages on source change, deletes pages whose source was removed. Use on "sync docs", "mirror documentation into the KB", "update the KB from project docs". Only touches pages with a `sync_origin` frontmatter marker — user-authored pages untouched.
 allowed-tools: Bash Read Write Edit Glob Grep
 ---
 

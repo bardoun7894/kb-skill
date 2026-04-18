@@ -1,6 +1,6 @@
 ---
 name: kb-compile
-description: Compile raw conversation transcripts (`raw/sessions/*.md`) and daily index logs (`daily/YYYY-MM-DD.md`) into structured knowledge articles under `knowledge/concepts` and `knowledge/connections`. The SessionEnd hook now raw-copies every session with zero API cost; kb-compile is the deferred extraction step that spends tokens only on material you choose to compile. Use when the user asks to compile the knowledge base, after a long coding session, or when `raw/sessions/` or `daily/` have uncompiled material.
+description: Compile raw session transcripts (`raw/sessions/*.md`) and daily index logs (`daily/YYYY-MM-DD.md`) into structured knowledge articles under `knowledge/concepts` and `knowledge/connections`. SessionEnd hook raw-copies every session for free; kb-compile is the deferred extraction that spends tokens only on material you choose. Use on "compile the knowledge base", after a long session, or when `raw/sessions/` has uncompiled material.
 allowed-tools: Bash Read Glob
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: kb-setup
-description: Initialize or upgrade the personal knowledge base in a project. Creates the ai-knowledge-base/ folder with raw/, daily/, knowledge/ subtree, copies the runtime scripts and hooks, merges Claude Code SessionStart/PreCompact/SessionEnd hooks into the project's settings.local.json, and runs uv sync. Use when the user asks to install the knowledge base, set up kb-skill, or enable automatic conversation capture in a new project. Safe to re-run — it detects an existing KB and upgrades in place.
+description: Initialize or upgrade the personal KB in a project. Creates `ai-knowledge-base/` with `raw/`, `daily/`, `knowledge/`, runtime scripts, and merges SessionStart/PreCompact/SessionEnd hooks into `.claude/settings.local.json`. Runs `uv sync`. Use on "install the KB", "set up kb-skill", "enable auto conversation capture". Safe to re-run — detects existing KB and upgrades in place.
 allowed-tools: Bash Read Write Edit Glob
 ---
 

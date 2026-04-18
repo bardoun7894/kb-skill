@@ -1,6 +1,6 @@
 ---
 name: kb-query
-description: Answer questions about past work, decisions, and learnings using the personal knowledge base (both auto-captured conversations and manually ingested documents). TRIGGER PROACTIVELY before answering any question that touches project history, prior decisions, existing architecture, past bugs, or "how did we do X before" — do not wait for the user to ask "/kb-query" explicitly. Also trigger when the user starts describing a new feature in an area the KB has history on, so the answer is grounded in prior art. Returns a cited answer with [[wikilinks]] — read the citations before replying. Use when the user asks "what did we decide about X", "how did we fix Y last time", "what do we know about Z", or any question that should consult accumulated project memory.
+description: Answer questions from the personal KB (auto-captured sessions + manually ingested docs). Trigger proactively before any question about project history, prior decisions, existing architecture, past bugs, "how did we do X before". Also trigger when the user starts describing a feature in a KB-known area so the answer is grounded in prior art. Returns a cited answer with [[wikilinks]] — read the citations before replying. Matches "what did we decide about X", "how did we fix Y", "what do we know about Z".
 allowed-tools: Bash Read
 ---
 
