@@ -1,8 +1,8 @@
 """
 Lint the knowledge base for structural and semantic health.
 
-Runs 7 checks: broken links, orphan pages, orphan sources, stale articles,
-contradictions (LLM), missing backlinks, and sparse articles.
+Runs 8 checks: broken links, orphan pages, orphan sources, stale articles,
+missing backlinks, sparse articles, duplicates (Jev), and contradictions (LLM).
 
 Usage:
     uv run python lint.py                    # all checks
@@ -13,7 +13,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
+from itertools import combinations
 from pathlib import Path
+
+import jev
+import kb_supersede
 
 from config import ARTICLE_TYPES, KNOWLEDGE_DIR, REPORTS_DIR, now_iso, today_iso
 from utils import (
@@ -198,6 +203,89 @@ def check_sparse_articles() -> list[dict]:
     return issues
 
 
+# Duplicates = the "resolve" step of KG construction (anthropics/claude-cookbooks,
+# capabilities/knowledge_graph): two current articles about the same thing. Not
+# supersession (kb_supersede.py), where a newer article makes an older one wrong.
+DUP_STOP = {"the", "a", "an", "to", "of", "and", "in", "on", "for", "is", "with", "vs", "from",
+            "by", "at", "as", "or", "it", "its", "via", "how", "what", "no", "not", "why"}
+DUP_SLUG_MIN = 0.4      # slug-word Jaccard; measured: 12 candidate pairs of 4,560 on 96 articles
+DUP_SUMMARY_MIN = 0.3   # summary-word Jaccard
+DUP_REPORT_MIN = 0.7
+
+DUP_RUBRIC = (
+    "The state lists a knowledge base's articles, each with a one-line summary. Each "
+    "question names two of them as 'a=<id> b=<id>'.\n\n"
+    "Answer: do these two articles cover the SAME subject, so a reader would be better "
+    "served by one merged article?\n\n"
+    "Say yes when both describe the same system, decision, bug, or pattern, even with "
+    "different wording or emphasis. Say NO when they are different systems that share "
+    "vocabulary, when one is a general pattern and the other a specific instance of it, "
+    "or when one is a bug and the other its separate follow-up work."
+)
+
+
+def _dup_tokens(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in DUP_STOP and len(w) > 1}
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    return len(a & b) / len(a | b) if a | b else 0.0
+
+
+def duplicate_candidates(arts: dict[str, dict]) -> list[tuple[str, str]]:
+    """Pairs with overlapping slugs or summaries. Deterministic, free.
+
+    A source and an article compiled from it overlap by design, so source/non-source
+    pairs are never candidates. Redirects and superseded articles are already resolved.
+    """
+    live = sorted(k for k, v in arts.items()
+                  if v.get("status") != "superseded"
+                  and not kb_supersede.REDIRECT.search(v["summary"] or ""))
+    pairs = []
+    for a, b in combinations(live, 2):
+        if a.startswith("sources/") != b.startswith("sources/"):
+            continue
+        slug = _jaccard(_dup_tokens(a.split("/")[-1]), _dup_tokens(b.split("/")[-1]))
+        summ = _jaccard(_dup_tokens(arts[a]["summary"]), _dup_tokens(arts[b]["summary"]))
+        if slug >= DUP_SLUG_MIN or summ >= DUP_SUMMARY_MIN:
+            pairs.append((a, b))
+    return pairs
+
+
+def check_duplicates() -> list[dict]:
+    """Jev judges each candidate pair. Jev unavailable -> report candidates as unverified."""
+    arts = kb_supersede.load_articles()
+    pairs = duplicate_candidates(arts)
+    if not pairs:
+        return []
+    catalog = [{"id": k, "summary": v["summary"]} for k, v in sorted(arts.items())]
+    issues = []
+    for start in range(0, len(pairs), kb_supersede.CHUNK):
+        chunk = pairs[start:start + kb_supersede.CHUNK]
+        questions = {f"p{i}": {"type": "noul", "instructions": f"a={a} b={b}"}
+                     for i, (a, b) in enumerate(chunk)}
+        answers = jev.ask({"task": DUP_RUBRIC, "articles": catalog}, questions,
+                          tag="kb-lint-duplicates", timeout=30)
+        for i, (a, b) in enumerate(chunk):
+            ans = (answers or {}).get(f"p{i}")
+            p = ans.get("noul") if isinstance(ans, dict) else None
+            if not isinstance(p, (int, float)):
+                issues.append({
+                    "severity": "suggestion",
+                    "check": "duplicate",
+                    "file": f"{a}.md",
+                    "detail": f"Possible duplicate of [[{b}]] (unverified: Jev unavailable)",
+                })
+            elif p >= DUP_REPORT_MIN:
+                issues.append({
+                    "severity": "warning",
+                    "check": "duplicate",
+                    "file": f"{a}.md",
+                    "detail": f"Likely duplicate of [[{b}]] (p={p:.2f}); merge into one",
+                })
+    return issues
+
+
 async def check_contradictions() -> list[dict]:
     """Use LLM to detect contradictions across articles."""
     from claude_agent_sdk import (
@@ -321,6 +409,7 @@ def main():
         ("Frontmatter schema", check_frontmatter_schema),
         ("Missing backlinks", check_missing_backlinks),
         ("Sparse articles", check_sparse_articles),
+        ("Duplicates (Jev)", check_duplicates),
     ]
 
     for name, check_fn in checks:
