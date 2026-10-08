@@ -6,7 +6,7 @@ allowed-tools: Bash Read
 
 # kb-lint — audit the knowledge base
 
-Thin wrapper around `scripts/lint.py`, which runs seven structural checks plus one optional LLM-based contradiction check.
+Thin wrapper around `scripts/lint.py`, which runs eight checks (seven structural, one Jev) plus one optional LLM-based contradiction check.
 
 ## Prerequisites
 
@@ -21,7 +21,8 @@ The project must already be initialized by `/kb-setup`. If `ai-knowledge-base/sc
 5. **Frontmatter schema** — every article must have `name`, `description`, `type` (one of `concept`/`entity`/`source`/`connection`/`qa`), and live in the matching folder. Severity: error.
 6. **Missing backlinks** — asymmetric links where A→B but not B→A. Severity: suggestion, auto-fixable.
 7. **Sparse articles** — articles under 200 words. Severity: suggestion.
-8. **Contradictions** (LLM, optional) — factual conflicts across articles. Severity: warning. Costs ~$0.15–$0.25.
+8. **Duplicates** (Jev) — two current articles on the same subject (the "resolve" step of knowledge-graph construction). Free prefilter on slug/summary word overlap, then one Jev call judges the pairs. Severity: warning at p >= 0.7; suggestion marked "unverified" when Jev is unavailable. Report-only: merging needs approval.
+9. **Contradictions** (LLM, optional) — factual conflicts across articles. Severity: warning. Costs ~$0.15–$0.25.
 
 ## Steps
 
